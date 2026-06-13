@@ -1,3 +1,5 @@
+"""кнопки"""
+
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 
 
@@ -44,17 +46,17 @@ def create_purchase_keyboard():
 
 def create_house_keyboard():
     keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("/build brown", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/build lightblue", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build brown \U0001F7EB", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build lightblue \U00002B1C", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/build pink", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/build orange", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build pink \U0001F7EA", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build orange \U0001F7E7", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/build red", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/build yellow", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build red \U0001F7E5", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build yellow \U0001F7E8", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/build green", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/build darkblue", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build green \U0001F7E9", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/build darkblue \U0001F7E6", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
     keyboard.add_button("назад", color=VkKeyboardColor.SECONDARY)
     return keyboard.get_keyboard()
@@ -62,21 +64,20 @@ def create_house_keyboard():
 
 def create_hotel_keyboard():
     keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("/hotel brown", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/hotel lightblue", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel brown \U0001F7EB", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel lightblue \U00002B1C", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/hotel pink", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/hotel orange", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel pink \U0001F7EA", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel orange \U0001F7E7", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/hotel red", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/hotel yellow", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel red \U0001F7E5", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel yellow \U0001F7E8", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
-    keyboard.add_button("/hotel green", color=VkKeyboardColor.SECONDARY)
-    keyboard.add_button("/hotel darkblue", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel green \U0001F7E9", color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button("/hotel darkblue \U0001F7E6", color=VkKeyboardColor.SECONDARY)
     keyboard.add_line()
     keyboard.add_button("назад", color=VkKeyboardColor.SECONDARY)
     return keyboard.get_keyboard()
-
 
 def create_auction_keyboard(is_owner=False):
     keyboard = VkKeyboard(one_time=False)

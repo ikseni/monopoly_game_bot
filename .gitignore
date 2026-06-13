@@ -16,3 +16,8 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/

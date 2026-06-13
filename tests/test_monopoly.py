@@ -6,7 +6,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from game_logic import Game
-from game_data import CELLS, HOUSE_PRICES
 
 
 @pytest.fixture
@@ -178,7 +177,7 @@ class TestRent:
         cell = game.CELLS[1]
 
         rent = game.get_property_rent(cell)
-        assert rent == 10
+        assert rent == 4
 
     def test_property_rent_with_1_house(self, game_with_two_players):
         game = game_with_two_players
@@ -187,7 +186,16 @@ class TestRent:
         cell['houses'] = 1
 
         rent = game.get_property_rent(cell)
-        assert rent == 30
+        assert rent == 10
+
+    def test_property_rent_with_4_houses(self, game_with_two_players):
+        game = game_with_two_players
+        cell = game.CELLS[1]
+        cell['owner'] = 222
+        cell['houses'] = 4
+
+        rent = game.get_property_rent(cell)
+        assert rent == 160
 
     def test_property_rent_with_hotel(self, game_with_two_players):
         game = game_with_two_players
@@ -234,7 +242,7 @@ class TestRent:
 
 
 class TestJail:
-    """Тесты тюремной механики"""
+    """Тесты работы тюрьмы"""
 
     def test_move_to_jail(self, game_with_two_players):
         game = game_with_two_players
@@ -318,7 +326,7 @@ class TestJail:
 
         assert can_move == True
         assert player['in_jail'] == False
-        assert player['money'] in [450, 500]
+        assert player['money'] == 450
         assert "3-я попытка" in msg or "штрафа" in msg
 
 
@@ -384,44 +392,45 @@ class TestAuction:
 
 
 class TestBuilding:
-    """Тесты строительства домов и отелей"""
+    """Тесты строительства домов и отелей """
 
-    def test_can_build_on_color_missing_properties(self, game_with_two_players):
-        game = game_with_two_players
-        game.CELLS[1]['owner'] = 111
-
-        can_build, result = game.can_build_on_color(111, 'brown')
-
-        assert not can_build
-        assert "всеми" in result.lower()
-
-    def test_can_build_on_color_success(self, game_with_brown_set):
+    def test_can_build_house_on_cell(self, game_with_brown_set):
         game = game_with_brown_set
+        game.players[111]['money'] = 500
 
-        can_build, result = game.can_build_on_color(111, 'brown')
+        can_build, msg = game.can_build_house_on_cell(111, 1)
 
-        assert can_build
-        assert len(result) == 2
+        assert can_build == True
+        assert msg == "Можно строить"
 
     def test_build_house_success(self, game_with_brown_set):
         game = game_with_brown_set
         game.players[111]['money'] = 500
 
-        success, msg = game.build_house(111, 'brown')
+        success, msg = game.build_house(111, 1)
 
         assert success
         assert game.CELLS[1]['houses'] == 1
-        assert game.CELLS[3]['houses'] == 1
-        assert game.players[111]['money'] == 400
+        assert game.players[111]['money'] == 450
 
     def test_build_house_not_enough_money(self, game_with_brown_set):
         game = game_with_brown_set
-        game.players[111]['money'] = 50
+        game.players[111]['money'] = 30
 
-        success, msg = game.build_house(111, 'brown')
+        success, msg = game.build_house(111, 1)
 
         assert not success
         assert "Не хватает денег" in msg
+
+    def test_build_house_without_monopoly(self, game_with_two_players):
+        game = game_with_two_players
+        game.CELLS[1]['owner'] = 111
+        game.players[111]['money'] = 500
+
+        can_build, msg = game.can_build_house_on_cell(111, 1)
+
+        assert can_build == False
+        assert "всеми" in msg.lower()
 
     def test_build_hotel_success(self, game_with_brown_set):
         game = game_with_brown_set
@@ -429,11 +438,102 @@ class TestBuilding:
         game.CELLS[3]['houses'] = 4
         game.players[111]['money'] = 1000
 
-        success, msg = game.build_hotel(111, 'brown')
+        success, msg = game.build_hotel(111, 1)
 
         assert success
-        assert game.CELLS[1]['hotel']
-        assert game.CELLS[3]['hotel']
+        assert game.CELLS[1]['hotel'] == True
+        assert game.CELLS[1]['houses'] == 0
+        assert game.players[111]['money'] == 800
+
+    def test_build_hotel_without_4_houses(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.CELLS[1]['houses'] = 2
+        game.CELLS[3]['houses'] = 2
+        game.players[111]['money'] = 1000
+
+        can_build, msg = game.can_build_hotel_on_cell(111, 1)
+
+        assert can_build == False
+        assert "4 дома" in msg
+
+    def test_get_buildable_cells(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.players[111]['money'] = 500
+
+        buildable = game.get_buildable_cells(111)
+
+        assert len(buildable) == 2
+        assert buildable[0][0] in [1, 3]
+
+    def test_get_hotelable_cells(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.CELLS[1]['houses'] = 4
+        game.CELLS[3]['houses'] = 4
+
+        hotelable = game.get_hotelable_cells(111)
+
+        assert len(hotelable) == 2
+        assert hotelable[0][0] in [1, 3]
+
+    def test_cannot_build_uneven_houses(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.players[111]['money'] = 500
+
+        game.build_house(111, 1)
+        assert game.CELLS[1]['houses'] == 1
+        assert game.CELLS[3]['houses'] == 0
+
+        can_build, msg = game.can_build_house_on_cell(111, 1)
+
+        assert can_build == False
+        assert "дострой" in msg.lower() or "уровня" in msg.lower()
+
+class TestSellBuilding:
+    """Тесты продажи домов и отелей"""
+
+    def test_sell_house_success(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.CELLS[1]['houses'] = 2
+        game.players[111]['money'] = 500
+
+        success, msg = game.sell_building(111, 1)
+
+        assert success
+        assert game.CELLS[1]['houses'] == 1
+        assert game.players[111]['money'] == 525  # 500 + 25 (50/2)
+
+    def test_cannot_sell_no_buildings(self, game_with_brown_set):
+        game = game_with_brown_set
+
+        success, msg = game.sell_building(111, 1)
+
+        assert not success
+        assert "нечего продавать" in msg
+
+    def test_cannot_sell_wrong_owner(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.CELLS[1]['houses'] = 1
+
+        success, msg = game.sell_building(222, 1)
+
+        assert not success
+        assert "не принадлежит" in msg
+
+    def test_cannot_sell_uneven_houses(self, game_with_brown_set):
+        game = game_with_brown_set
+        game.players[111]['money'] = 500
+
+        game.build_house(111, 1)
+        game.build_house(111, 3)
+
+        game.build_house(111, 1)
+        assert game.CELLS[1]['houses'] == 2
+        assert game.CELLS[3]['houses'] == 1
+
+        can_sell, msg = game.can_sell_building_on_cell(111, 3)
+
+        assert can_sell == False
+        assert "равномерно" in msg.lower() or "других" in msg.lower()
 
 
 class TestMortgage:
@@ -519,6 +619,14 @@ class TestUtilityMethods:
         assert 'brown' in groups
         assert len(groups['brown']) == 2
 
+    def test_get_cells_by_color(self, game_with_brown_set):
+        game = game_with_brown_set
+
+        cells = game.get_cells_by_color(111, 'brown')
+
+        assert len(cells) == 2
+        assert cells[0][0] in [1, 3]
+
 
 class TestBankruptcy:
     """Тесты банкротства"""
@@ -526,7 +634,7 @@ class TestBankruptcy:
     def test_bankruptcy_on_rent(self, game_with_two_players):
         game = game_with_two_players
         game.CELLS[1]['owner'] = 222
-        game.CELLS[1]['rent'] = [200, 400, 600, 800, 1000, 1200]
+        game.CELLS[1]['rent'] = [200, 400, 600, 800, 1000, 1200, 1400]
         game.players[111]['position'] = 0
         game.players[111]['money'] = 100
 

@@ -1,3 +1,5 @@
+"""логика игры"""
+
 import random
 import string
 from game_data import CELLS, HOUSE_PRICES
@@ -16,8 +18,10 @@ class Game:
         self.pending_purchase = None
         self.auction = None
         self.double_count = 0
-        self.CELLS = [dict(c) for c in CELLS]  # копия, чтобы не мутировать глобал
+        self.last_roll_was_double = False
+        self.CELLS = [dict(c) for c in CELLS]
         self.last_dice_sum = 0
+        self.double_roller_id = None
 
     @staticmethod
     def generate_room_code():
@@ -28,16 +32,20 @@ class Game:
             return False, "Вы уже в игре"
         if self.game_started:
             return False, "Игра уже началась"
+
+        if len(self.players) >= 6:
+            return False, "В комнате уже максимум 6 игроков!"
+
         self.players[user_id] = {
             'name': user_name,
             'position': 0,
             'money': 1500,
             'properties': [],
             'in_jail': False,
-            'jail_turns': 0,   # сколько ходов уже отсидел (0, 1, 2)
+            'jail_turns': 0,
         }
         self.turn_order.append(user_id)
-        return True, f"{user_name} присоединился! Игроков: {len(self.players)}"
+        return True, f"{user_name} присоединился. Игроков: {len(self.players)}/6"
 
     def start_game(self):
         if len(self.players) < 2:
@@ -46,6 +54,7 @@ class Game:
         self.current_turn = random.choice(self.turn_order)
         self.waiting_for_purchase = False
         self.double_count = 0
+        self.last_roll_was_double = False
         players_list = ", ".join([p['name'] for p in self.players.values()])
         first_name = self.players[self.current_turn]['name']
         return True, f"Игра началась!\n{players_list}\nПервый ход: {first_name}"
@@ -86,10 +95,10 @@ class Game:
             return 0
 
         if cell.get('hotel'):
-            return cell['rent'][5]
+            return cell['rent'][6]
         houses = cell.get('houses', 0)
         if houses > 0:
-            return cell['rent'][min(houses + 1, 5)]
+            return cell['rent'][houses + 1]
         if self.owns_full_color(cell['owner'], cell.get('color')):
             return cell['rent'][1]
         return cell['rent'][0]
@@ -174,7 +183,7 @@ class Game:
             if cell['price'] > 0:
                 if cell['owner'] is None:
                     msg += f"\n{cell['name']} стоит {cell['price']}$"
-                    msg += f"\nУ тебя {player['money']}$"
+                    msg += f"\nУ Вас {player['money']}$"
                     msg += f"\nкупить или отказаться"
                     self.pending_purchase = {'user_id': user_id, 'cell_id': cell_index}
                     self.waiting_for_purchase = True
@@ -198,7 +207,7 @@ class Game:
         elif cell_type == 'station':
             if cell['owner'] is None:
                 msg += f"\n{cell['name']} стоит {cell['price']}$"
-                msg += f"\nУ тебя {player['money']}$"
+                msg += f"\nУ Вас {player['money']}$"
                 msg += f"\nкупить или отказаться"
                 self.pending_purchase = {'user_id': user_id, 'cell_id': cell_index}
                 self.waiting_for_purchase = True
@@ -220,7 +229,7 @@ class Game:
         elif cell_type == 'utility':
             if cell['owner'] is None:
                 msg += f"\n{cell['name']} стоит {cell['price']}$"
-                msg += f"\nУ тебя {player['money']}$"
+                msg += f"\nУ Вас {player['money']}$"
                 msg += f"\nкупить или отказаться"
                 self.pending_purchase = {'user_id': user_id, 'cell_id': cell_index}
                 self.waiting_for_purchase = True
@@ -316,6 +325,7 @@ class Game:
         idx = self.turn_order.index(self.current_turn)
         self.current_turn = self.turn_order[(idx + 1) % len(self.turn_order)]
         self.double_count = 0
+        self.last_roll_was_double = False
         return self.players[self.current_turn]['name']
 
     """Покупка"""
@@ -334,7 +344,7 @@ class Game:
         if cell['owner'] is not None:
             return False, f"{cell['name']} уже куплена!"
         if player['money'] < cell['price']:
-            return False, f"Не хватает денег(( Нужно {cell['price']}$, у тебя {player['money']}$"
+            return False, f"Не хватает денег(( Нужно {cell['price']}$, у Вас {player['money']}$"
 
         player['money'] -= cell['price']
         cell['owner'] = user_id
@@ -381,7 +391,7 @@ class Game:
         if bid_amount <= self.auction['current_bid']:
             return False, f"Ставка должна быть выше текущей ({self.auction['current_bid']}$)"
         if player['money'] < bid_amount:
-            return False, f"Не хватает денег. У тебя {player['money']}$"
+            return False, f"Не хватает денег. У Вас {player['money']}$"
 
         self.auction['current_bid'] = bid_amount
         self.auction['current_bidder'] = user_id
@@ -451,82 +461,126 @@ class Game:
 
     """Строительство"""
 
-    def can_build_on_color(self, user_id, color):
-        all_props = [c for c in self.CELLS if c.get('color') == color and c.get('type') == 'property']
-        if not all_props:
-            return False, f"Цвет «{color}» не существует"
-        owned = [c for c in all_props if c.get('owner') == user_id]
-        if len(owned) != len(all_props):
-            missing = len(all_props) - len(owned)
-            return False, f"Нужно владеть !всеми! улицами цвета {color} (не хватает {missing})"
-        return True, owned
+    def can_build_house_on_cell(self, user_id, cell_id):
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
 
-    def build_house(self, user_id, color):
+        if cell.get('owner') != user_id:
+            return False, f"{cell['name']} не принадлежит тебе!"
+
+        if not self.owns_full_color(user_id, color):
+            return False, f"Нужно владеть !всеми! улицами цвета {color}!"
+
+        if cell.get('hotel'):
+            return False, f"На {cell['name']} уже стоит отель!"
+        if cell.get('houses', 0) >= 4:
+            return False, f"На {cell['name']} уже 4 дома!"
+
+        all_cells_of_color = [c for c in self.CELLS if c.get('color') == color and c.get('type') == 'property']
+        houses_count = [c.get('houses', 0) for c in all_cells_of_color]
+        min_houses = min(houses_count)
+
+        if cell.get('houses', 0) > min_houses:
+            return False, f"Сначала дострой дома до этого уровня на других улицах цвета {color}!"
+
+        return True, "Можно строить"
+
+    def build_house(self, user_id, cell_id):
         can_act, jail_msg = self.can_act_in_jail(user_id)
         if not can_act:
             return False, jail_msg
 
-        can_build, result = self.can_build_on_color(user_id, color)
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
+
+        can_build, msg = self.can_build_house_on_cell(user_id, cell_id)
         if not can_build:
-            return False, result
+            return False, msg
 
         player = self.players[user_id]
-        props = result
+        price = self.get_house_price(color)
 
-        for prop in props:
-            if prop.get('hotel'):
-                return False, f"На {prop['name']} уже стоит отель"
-            if prop.get('houses', 0) >= 4:
-                return False, f"На {prop['name']} уже 4 дома - строй отель: /hotel {color}"
+        if player['money'] < price:
+            return False, f"Не хватает денег! Дом стоит {price}$, у Вас {player['money']}$"
 
-        price_per_house = self.get_house_price(color)
-        total_cost = price_per_house * len(props)
+        player['money'] -= price
+        cell['houses'] = cell.get('houses', 0) + 1
 
-        if player['money'] < total_cost:
-            return False, f"Не хватает денег. Нужно {total_cost}$ ({price_per_house}$ * {len(props)} улиц), у тебя {player['money']}$"
+        return True, f"{player['name']} построил дом на {cell['name']}!\nОсталось: {player['money']}$"
 
-        player['money'] -= total_cost
-        for prop in props:
-            prop['houses'] = prop.get('houses', 0) + 1
+    def can_build_hotel_on_cell(self, user_id, cell_id):
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
 
-        houses_now = props[0]['houses']
-        return True, (f"{player['name']} построил дома на улицах {color}!\n"
-                      f"Домов на каждой: {houses_now}\n"
-                      f"Потрачено: {total_cost}$\n"
-                      f"Осталось: {player['money']}$")
+        if cell.get('owner') != user_id:
+            return False, f"{cell['name']} не принадлежит тебе!"
 
-    def build_hotel(self, user_id, color):
+        if not self.owns_full_color(user_id, color):
+            return False, f"Нужно владеть всеми! улицами цвета {color}!"
+
+        if cell.get('hotel'):
+            return False, f"Отель уже есть на {cell['name']}!"
+
+        if cell.get('houses', 0) != 4:
+            return False, f"Нужно 4 дома на {cell['name']} для постройки отеля! Сейчас: {cell.get('houses', 0)}"
+
+        return True, "Можно строить отель"
+
+    def build_hotel(self, user_id, cell_id):
         can_act, jail_msg = self.can_act_in_jail(user_id)
         if not can_act:
             return False, jail_msg
 
-        can_build, result = self.can_build_on_color(user_id, color)
-        if not can_build:
-            return False, result
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
 
+        if cell.get('owner') != user_id:
+            return False, f"{cell['name']} не принадлежит Вам!"
+
+        if not self.owns_full_color(user_id, color):
+            return False, f"Нужно владеть !всеми! улицами цвета {color}!"
+
+        if cell.get('hotel'):
+            return False, f"Отель уже есть на {cell['name']}!"
+
+        if cell.get('houses', 0) != 4:
+            return False, f"Нужно 4 дома на {cell['name']} для постройки отеля! Сейчас: {cell.get('houses', 0)}"
+
+        price = self.get_house_price(color) * 4
         player = self.players[user_id]
-        props = result
 
-        for prop in props:
-            if prop.get('hotel'):
-                return False, f"Отель уже есть на {prop['name']}"
-            if prop.get('houses', 0) < 4:
-                return False, f"Нужно 4 дома на {prop['name']} перед постройкой отеля. Сейчас: {prop.get('houses', 0)}"
+        if player['money'] < price:
+            return False, f"Не хватает денег. Отель стоит {price}$, у Вас {player['money']}$"
 
-        price_per_hotel = self.get_house_price(color) * 5
-        total_cost = price_per_hotel
+        player['money'] -= price
+        cell['houses'] = 0
+        cell['hotel'] = True
 
-        if player['money'] < total_cost:
-            return False, f"Не хватает денег. Нужно {total_cost}$, у тебя {player['money']}$"
+        return True, f"{player['name']} построил отель на {cell['name']}!\nОсталось: {player['money']}$"
 
-        player['money'] -= total_cost
-        for prop in props:
-            prop['houses'] = 0
-            prop['hotel'] = True
+    def get_buildable_cells(self, user_id):
+        buildable = []
+        for cell in self.CELLS:
+            if cell.get('owner') == user_id and cell.get('type') == 'property':
+                can_build, _ = self.can_build_house_on_cell(user_id, cell['id'])
+                if can_build:
+                    buildable.append((cell['id'], cell['name'], cell.get('houses', 0)))
+        return buildable
 
-        return True, (f"{player['name']} построил отели на улицах {color}!\n"
-                      f"Потрачено: {total_cost}$\n"
-                      f"Осталось: {player['money']}$")
+    def get_hotelable_cells(self, user_id):
+        hotelable = []
+        for cell in self.CELLS:
+            if cell.get('owner') == user_id and cell.get('type') == 'property':
+                if not cell.get('hotel') and cell.get('houses', 0) == 4:
+                    hotelable.append((cell['id'], cell['name']))
+        return hotelable
+
+    def get_cells_by_color(self, user_id, color):
+        cells = []
+        for cell in self.CELLS:
+            if cell.get('color') == color and cell.get('owner') == user_id and cell.get('type') == 'property':
+                cells.append((cell['id'], cell['name'], cell.get('houses', 0), cell.get('hotel', False)))
+        return cells
 
     def get_color_groups(self, user_id):
         color_groups = {}
@@ -578,7 +632,7 @@ class Game:
         redeem_cost = int(mortgage_value * 1.1)
 
         if player['money'] < redeem_cost:
-            return False, f"Не хватает денег. Нужно {redeem_cost}$, у тебя {player['money']}$"
+            return False, f"Не хватает денег. Нужно {redeem_cost}$, у Вас {player['money']}$"
 
         cell['mortgaged'] = False
         player['money'] -= redeem_cost
@@ -602,3 +656,60 @@ class Game:
             if cell.get('mortgaged'):
                 result.append((prop_id, cell))
         return result
+
+    def can_sell_building_on_cell(self, user_id, cell_id):
+        """Проверяет, можно ли продать дом/отель на конкретной улице
+            по правилу нельзя купить второй дом если не приобретено по одному дому на каждой улице цвета
+        """
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
+
+        if cell.get('owner') != user_id:
+            return False, f"{cell['name']} не принадлежит тебе!"
+        if cell.get('houses', 0) == 0 and not cell.get('hotel'):
+            return False, f"На {cell['name']} нечего продавать!"
+
+        all_owned_cells = [c for c in self.CELLS if
+                           c.get('color') == color and c.get('type') == 'property' and c.get('owner') == user_id]
+
+        levels = []
+        for c in all_owned_cells:
+            if c['id'] == cell_id:
+                if c.get('hotel'):
+                    levels.append(4)
+                else:
+                    levels.append(c.get('houses', 0) - 1)
+            else:
+                levels.append(c.get('houses', 0) + (1 if c.get('hotel') else 0))
+
+        if max(levels) - min(levels) > 1:
+            return False, "Нельзя продать! Дома нужно продавать равномерно по всему цвету. Сначала продайте с других застроенных улиц."
+
+        return True, "Можно продавать"
+
+    def sell_building(self, user_id, cell_id):
+        can_act, jail_msg = self.can_act_in_jail(user_id)
+        if not can_act:
+            return False, jail_msg
+
+        cell = self.CELLS[cell_id]
+        color = cell.get('color')
+        player = self.players[user_id]
+
+        can_sell, msg = self.can_sell_building_on_cell(user_id, cell_id)
+        if not can_sell:
+            return False, msg
+
+        refund = self.get_house_price(color) // 2
+
+        if cell.get('hotel'):
+            cell['hotel'] = False
+            cell['houses'] = 4
+            player['money'] += refund
+            return True, f"Отель на {cell['name']} продан банку. (теперь там 4 дома)\nВозврат: {refund}$. Баланс: {player['money']}$"
+        else:
+            cell['houses'] -= 1
+            player['money'] += refund
+            houses_left = cell['houses']
+            status = f"осталось {houses_left} дом(а)" if houses_left > 0 else "построек больше нет"
+            return True, f"Дом на {cell['name']} продан банку ({status}).\nВозврат: {refund}$. Баланс: {player['money']}$"
